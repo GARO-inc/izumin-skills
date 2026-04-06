@@ -9,6 +9,7 @@ Claude Code のカスタムスキル集（採用自動化）
 | `renew-scout` | Renew Career スカウト一括送信 |
 | `renew-applicant-screen` | Renew Career 応募者スクリーニング＆面談お誘い |
 | `lapras-interest` | LAPRAS Scout 興味通知一括送信 |
+| `casual-interview-sync` | カジュアル面談 → Notion 自動同期 |
 
 ## セットアップ
 
