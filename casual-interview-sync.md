@@ -1,28 +1,22 @@
 # カジュアル面談 → Notion 自動同期スキル
 
-Google Calendar の今日のカジュアル面談予定を検出し、Notion の候補者タレントプール（選考管理DB）に自動追加する。既にNotionに存在する候補者はスキップする。
+Google Calendar（ブラウザ）から今日のカジュアル面談予定を検出し、Notion の候補者タレントプール（選考管理DB）に自動追加する。既にNotionに存在する候補者はスキップする。
 
 ## 前提条件
-- Google Calendar MCP が利用可能であること
+- Chrome で Google Calendar にログイン済みであること（@garoinc.jp アカウント）
+- Chrome MCP ツールが利用可能であること
 - Notion MCP が利用可能であること
 
 ## Notion 候補者タレントプール
-- データベースID: `3378f60eee2381c99716e0f87df12d52`
 - データソースURL: `collection://3378f60e-ee23-811c-ba5d-000b2749adcc`
 - URL: https://www.notion.so/garoinc/3378f60eee2381c99716e0f87df12d52
 
 ### プロパティ
-| プロパティ | 型 | 用途 |
+| プロパティ | 型 | 設定値 |
 |-----------|------|------|
 | 候補者名 | title | 候補者のフルネーム |
-| 選考ステータス | select | 「カジュアル面談予定」を設定 |
+| 選考ステータス | select | 「カジュアル面談予定」 |
 | 次アクション日 | text | 面談日（YYYY-MM-DD） |
-| 媒体 | select | Renew 等 |
-| 職種 | select | エンジニア / デザイナー / PM 等 |
-| カジュアル面談メモ | text | メモ欄 |
-| プロフィールURL | url | プロフィールリンク |
-| GARO点数 | number | 評価スコア |
-| Ship点数 | number | 評価スコア |
 
 ## カレンダーイベントの形式
 タイトル: `{候補者名} x {面談者名}: カジュアル面談`
@@ -30,37 +24,53 @@ Google Calendar の今日のカジュアル面談予定を検出し、Notion の
 例: `加唐創 x 大池泉美: カジュアル面談`
 
 - 「x」の前の部分 = 候補者名（前後の空白をtrim）
-- attendees のうち `@garoinc.jp` でないメールアドレス = 候補者のメール
+- 「:」の後に「カジュアル面談」を含むものが対象
 
 ## 実行フロー
 
-### Step 1: 今日の日付を取得
-Google Calendar MCP の `get-current-time` で現在時刻を取得し、今日の日付範囲を決定する。
-- timeMin: 今日の 00:00:00 (Asia/Tokyo)
-- timeMax: 今日の 23:59:59 (Asia/Tokyo)
+### Phase 1: ブラウザ準備
+1. `tabs_context_mcp` でタブ状況を確認
+2. `tabs_create_mcp` で新しいタブを作成
+3. `navigate` で `https://calendar.google.com/calendar/r/day` に移動（今日の日表示）
+4. ページ読み込み待機（3秒）
 
-### Step 2: Google Calendar からイベント取得
-`list-events` で今日のイベントを取得する。
-- calendarId: "primary"
-- timeZone: "Asia/Tokyo"
+### Phase 2: 今日のイベントを取得
+1. スクリーンショットで今日のカレンダー表示を確認
+2. `get_page_text` または `javascript_tool` でページ内のイベント情報を取得
+3. 「カジュアル面談」を含むイベントを特定
 
-### Step 3: カジュアル面談イベントをフィルタ
-`summary` に「カジュアル面談」を含むイベントだけ抽出する。
+イベントが見つからなかった場合の代替手段:
+- `javascript_tool` で DOM からイベント要素を抽出:
+  ```javascript
+  // イベント要素からテキストを取得
+  const events = document.querySelectorAll('[data-eventid]');
+  const results = [];
+  events.forEach(e => {
+    const text = e.textContent || e.innerText;
+    if (text.includes('カジュアル面談')) {
+      results.push(text);
+    }
+  });
+  return JSON.stringify(results);
+  ```
 
-各イベントから以下を抽出:
-- **候補者名**: タイトルの「x」の前の部分（trimする）
-- **候補者メール**: attendees の中で `@garoinc.jp` でないアドレス
-- **面談日時**: start.dateTime
-- **Google Meet リンク**: hangoutLink または conferenceData
-- **カレンダーリンク**: htmlLink
+### Phase 3: 各イベントの詳細を取得
+「カジュアル面談」イベントごとに:
 
-面談が0件なら「今日のカジュアル面談はありません」と報告して終了。
+1. イベントをクリックして詳細ポップアップを開く
+2. スクリーンショットで詳細情報を確認
+3. 以下を読み取る:
+   - **候補者名**: タイトルの「x」の前の部分
+   - **面談日時**: 日付と時刻
+   - **候補者メール**: ゲスト一覧から `@garoinc.jp` でないアドレス
+   - **Google Meet リンク**: 会議リンク
+4. ポップアップを閉じる（×ボタンまたはEscキー）
 
-### Step 4: Notion で重複チェック
-Notion の候補者タレントプールを検索（data_source_url: `collection://3378f60e-ee23-811c-ba5d-000b2749adcc`）し、同名の候補者が既に存在するか確認する。
+### Phase 4: Notion で重複チェック
+Notion MCP の検索ツールで候補者タレントプール（data_source_url: `collection://3378f60e-ee23-811c-ba5d-000b2749adcc`）を検索し、同名の候補者が既に存在するか確認する。
 
-### Step 5: Notion に候補者を追加
-重複がなければ Notion に新規ページを作成する。
+### Phase 5: Notion に候補者を追加
+重複がなければ Notion MCP のページ作成ツールで追加する。
 
 - parent: `{ "type": "data_source_id", "data_source_id": "3378f60e-ee23-811c-ba5d-000b2749adcc" }`
 - properties:
@@ -74,10 +84,9 @@ Notion の候補者タレントプールを検索（data_source_url: `collection
   - **日時**: YYYY-MM-DD HH:MM〜HH:MM
   - **メール**: candidate@example.com
   - **Google Meet**: https://meet.google.com/xxx
-  - **カレンダー**: https://www.google.com/calendar/event?eid=xxx
   ```
 
-### Step 6: 結果報告
+### Phase 6: 結果報告
 処理結果をまとめて報告する。
 
 ```
@@ -89,3 +98,15 @@ Notion の候補者タレントプールを検索（data_source_url: `collection
 
 合計: 追加 2名 / スキップ 1名
 ```
+
+面談が0件の場合: 「今日のカジュアル面談はありません」と報告して終了。
+
+## エラーハンドリング
+- カレンダーページが読み込めない場合はリトライ（最大2回）
+- イベント詳細が読み取れない場合はスクリーンショットで確認して再試行
+- Notion への追加が失敗した場合はスキップしてログに残す
+
+## 注意事項
+- Google Calendar は `@garoinc.jp` アカウントでログインしていること
+- 「カジュアル面談」を含まないイベントはスキップ
+- 候補者名はタイトルの「x」の前の部分を trim して使用
